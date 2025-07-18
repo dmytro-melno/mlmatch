@@ -17,7 +17,7 @@ It is inspired by pattern matching features of functional languages like OCaml a
 - Pattern matching only supported for types defined via the `tagged` macro. Matching on types such as `bool`, `int`, or `std::optional` is not supported.
 - No nested pattern matching.
 - No guard clauses (`when`).
-- No GADTs/indexed data types (yet?).
+- No GADTs/indexed data types.
 
 ## Requirements
 - A C++20-compliant compiler.
