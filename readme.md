@@ -9,7 +9,7 @@ It is inspired by pattern matching features of functional languages like OCaml a
 - Wildcard patterns for “catch-all” cases.
 - Exhaustiveness checking to ensure all cases are covered.
 - Unreachable clauses detection.
-- Zero runtime overhead. It generates a simple `switch`-statement tree from pattern matching clauses at compile time using template meta programming. The generated `switch` tree is guaranteed to inspect each scrutinee value at most once.
+- Zero runtime overhead. It generates a simple `switch` statement tree from pattern matching clauses at compile time using template meta programming. The generated `switch` tree is guaranteed to inspect each scrutinee value at most once.
 - Compact memory representation of tagged unions.
 - Pattern clauses compilation to case tree is based on [Maranget's algorithm](https://doi.org/10.1145/1411304.1411311), guaranteeing the same matching semantics as in OCaml or Haskell.
 
@@ -26,9 +26,11 @@ It is inspired by pattern matching features of functional languages like OCaml a
 ## Usage
 
 ### 1. Include the header
+```C++
 #include "mlmatch.h"
+```
 
-### 1. Define a tagged union
+### 2. Define a tagged union
 ```C++
 struct tagged(expr) (
     (val, (int v)),
@@ -39,7 +41,7 @@ struct tagged(expr) (
 );
 ```
 
-### 1. Perform pattern matching
+### 3. Perform pattern matching
 ```C++
 int eval(expr* e) {
     return match(*e).with(
@@ -139,6 +141,3 @@ void classify2_test() {
 // Something large
 // Something else
 ```
-
-## License
-This project is licensed under the MIT License—see LICENSE for details.
