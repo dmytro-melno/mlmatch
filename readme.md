@@ -25,12 +25,7 @@ It is inspired by pattern matching features of functional languages like OCaml a
 
 ## Usage
 
-### 1. Include the header
-```C++
-#include "mlmatch.h"
-```
-
-### 2. Define a tagged union
+### Tagged union definition
 ```C++
 struct tagged(expr) (
     (val, (int v)),
@@ -41,7 +36,7 @@ struct tagged(expr) (
 );
 ```
 
-### 3. Perform pattern matching
+### Pattern matching
 ```C++
 int eval(expr* e) {
     return match(*e).with(
