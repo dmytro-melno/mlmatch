@@ -4,17 +4,17 @@ A header-only C++ library providing algebraic data types (also known as tagged u
 It is inspired by pattern matching features of functional languages like OCaml and Haskell,
 
 ## Features
-- Concise and readable tagged unions definitions and expressive pattern matching.
+- Concise and readable tagged union definitions and expressive pattern matching.
 - Pattern matching on multiple values simultaneously.
 - Wildcard patterns for “catch-all” cases.
-- Exhaustiveness checking, ensuring all cases are covered.
+- Exhaustiveness checking to ensure all cases are covered.
 - Unreachable clauses detection.
-- Zero runtime overhead. It generates a simple `switch`-statement tree from pattern matching clauses at compile time using template meta-programming. The generated `switch` tree is guaranteed to inspect each scrutinee value at most once.
+- Zero runtime overhead. It generates a simple `switch`-statement tree from pattern matching clauses at compile time using template meta programming. The generated `switch` tree is guaranteed to inspect each scrutinee value at most once.
 - Compact memory representation of tagged unions.
-- Pattern clauses compilation to case tree is based on Maranget's algorithm(link: https://doi.org/10.1145/1411304.1411311), guaranteeing the same matching semantics as OCaml or Haskell.
+- Pattern clauses compilation to case tree is based on [Maranget's algorithm](https://doi.org/10.1145/1411304.1411311), guaranteeing the same matching semantics as in OCaml or Haskell.
 
 ## Limitations
-- Pattern matching only supported for types defined via the `tagged` macro. Matching on types such as bool, int, or std::optional is not supported.
+- Pattern matching only supported for types defined via the `tagged` macro. Matching on types such as `bool`, `int`, or `std::optional` is not supported.
 - No nested pattern matching.
 - No guard clauses (`when`).
 - No GADTs/indexed data types (yet?).
@@ -29,6 +29,7 @@ It is inspired by pattern matching features of functional languages like OCaml a
 #include "mlmatch.h"
 
 ### 1. Define a tagged union
+```C++
 struct tagged(expr) (
     (val, (int v)),
     (add, (expr* e1, expr* e2)),
@@ -36,8 +37,10 @@ struct tagged(expr) (
     (mul, (expr* e1, expr* e2)),
     (div, (expr* e1, expr* e2)),
 );
+```
 
 ### 1. Perform pattern matching
+```C++
 int eval(expr* e) {
     return match(*e).with(
         [](expr::val e) { return e.v; },
@@ -61,9 +64,11 @@ void test_eval() {
 }
 // Output:
 // res = 4205
+```
 
 
 ### Multiple scrutinee and "wildcard" patterns
+```C++
 struct tagged(color) (
     (red,   ()),
     (green, ()),
@@ -79,8 +84,10 @@ struct tagged(size) (
     (small, ()),
     (large, ())
 );
+```
 
 #### The base type of a tagged union can be used as a wildcard pattern to match any constructor of that type.
+```C++
 const char* classify1(color c, shape s, size sz) {
     return match(c, s, sz).with(
         [](color::red,   shape,            size::small) { return "Red small"; },
@@ -104,8 +111,10 @@ void classify1_test() {
 // Green rectangle
 // Something large
 // Something else
+```
 
 #### Alternatively, the special `_` type can be used as a wildcard pattern to match a value of any type. However, since a wildcard argument has type `_`, it cannot be used to bind and access the matched value.
+```C++
 const char* classify2(color c, shape s, size sz) {
     return match(c, s, sz).with(
         [](color::red,   _,                size::small) { return "Red small"; },
@@ -129,6 +138,7 @@ void classify2_test() {
 // Green rectangle
 // Something large
 // Something else
+```
 
 ## License
 This project is licensed under the MIT License—see LICENSE for details.
