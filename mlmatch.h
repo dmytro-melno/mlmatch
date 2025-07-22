@@ -55,7 +55,7 @@ namespace  __match_impl {
 
         B val;
 
-        static consteval func make(B val) -> tkey_val<A, B> { return {val}; }
+        static constexpr func make(B val) -> tkey_val<A, B> { return {val}; }
     };
 
     template <typename... >
@@ -108,6 +108,11 @@ namespace  __match_impl {
 
         template <typename F>
         constexpr func iter(F f) -> void {
+            return;
+        }
+
+        template <typename F>
+        static constexpr func iter_t(F f) -> void {
             return;
         }
 
@@ -172,6 +177,12 @@ namespace  __match_impl {
             xs.iter(f);
         }
 
+        template <typename F>
+        static constexpr func iter_t(F f) -> void {
+            f.template operator()<head>();
+            type_list<tail...>::iter_t(f);
+        }
+
         template <typename a>
         static constexpr bool mem_t = type_list<tail...>::template mem_t<a>;
         template <>
@@ -205,17 +216,17 @@ namespace  __match_impl {
 
     template <typename tkey>
     struct type_list_assoc_opt<tkey, type_list<>> {
-        static consteval auto go(const type_list<>) { return none{}; }
+        static constexpr auto go(const type_list<>) { return none{}; }
     };
 
     template <typename tkey, typename val_t, typename... ts>
     struct type_list_assoc_opt<tkey, type_list<tkey_val<tkey, val_t>, ts...>> {
-        static consteval auto go(const type_list<tkey_val<tkey, val_t>, ts...> ls) { return some<val_t>{ls.x.val}; }
+        static constexpr auto go(const type_list<tkey_val<tkey, val_t>, ts...> ls) { return some<val_t>{ls.x.val}; }
     };
 
     template <typename tkey, typename head, typename... ts>
     struct type_list_assoc_opt<tkey, type_list<head, ts...>> {
-        static consteval auto go(const type_list<head, ts...> ls) { return type_list_assoc_opt<tkey, type_list<ts...>>::go(ls.xs); }
+        static constexpr auto go(const type_list<head, ts...> ls) { return type_list_assoc_opt<tkey, type_list<ts...>>::go(ls.xs); }
     };
 
 
@@ -224,21 +235,21 @@ namespace  __match_impl {
 
     template <typename tkey>
     struct type_list_remove_assoc_impl<tkey, type_list<>> {
-        static consteval auto go(const type_list<>) { return type_list<>::nil(); }
+        static constexpr auto go(const type_list<>) { return type_list<>::nil(); }
     };
 
     template <typename tkey, typename val_t, typename... ts>
     struct type_list_remove_assoc_impl<tkey, type_list<tkey_val<tkey, val_t>, ts...>> {
-        static consteval auto go(const type_list<tkey_val<tkey, val_t>, ts...> ls) { return type_list_remove_assoc_impl<tkey, type_list<ts...>>::go(ls.xs); }
+        static constexpr auto go(const type_list<tkey_val<tkey, val_t>, ts...> ls) { return type_list_remove_assoc_impl<tkey, type_list<ts...>>::go(ls.xs); }
     };
 
     template <typename tkey, typename head, typename... ts>
     struct type_list_remove_assoc_impl<tkey, type_list<head, ts...>> {
-        static consteval auto go(const type_list<head, ts...> ls) { return type_list_remove_assoc_impl<tkey, type_list<ts...>>::go(ls.xs).cons(ls.x); }
+        static constexpr auto go(const type_list<head, ts...> ls) { return type_list_remove_assoc_impl<tkey, type_list<ts...>>::go(ls.xs).cons(ls.x); }
     };
 
     template <typename tkey, typename ts>
-    consteval auto type_list_remove_assoc(const ts ls) { return type_list_remove_assoc_impl<tkey, ts>::go(ls); }
+    constexpr auto type_list_remove_assoc(const ts ls) { return type_list_remove_assoc_impl<tkey, ts>::go(ls); }
 
 
     template <typename t, t...>
@@ -278,9 +289,9 @@ namespace  __match_impl {
         template <t v>
         static consteval bool mem_v() { return v == val || value_list<t, vals...>::template mem_v<v>(); }
 
-        template <typename F>
-        static consteval void iter(F f) {
-            f(std::integral_constant<t, val>{});
+        template <template <t a> typename F>
+        static consteval void iter(F<val> f) {
+            f();
             value_list<t, vals...>::iter(f);
         }
     };
@@ -500,14 +511,14 @@ namespace  __match_impl {
 
     template <int scrutinee_idx, typename scru_types_LS>
     struct cc<scrutinee_idx, scru_types_LS, type_list<>> {
-        static consteval func go(type_list<> cls) {
+        static constexpr func go(type_list<> cls) {
             static_assert(false, "error: unhandled case.");
         }
     };
 
     template <int scrutinee_idx, int cl_idx, typename pats_LS, typename done_F, typename... cls_ts>
     struct cc<scrutinee_idx, type_list<>, type_list<clause<cl_idx, pats_LS, done_F>, cls_ts...>> {
-        static consteval func go(type_list<clause<cl_idx, pats_LS, done_F>, cls_ts...> cls) {
+        static constexpr func go(type_list<clause<cl_idx, pats_LS, done_F>, cls_ts...> cls) {
             static_assert(pats_LS::is_empty_t, "error: excessive patterns. more pattern than scrutinee values.");
             return cc_result<case_tree::done<done_F, fn_get_arg_tys<done_F>>, int_list<cl_idx>>{
                 case_tree::done<done_F, fn_get_arg_tys<done_F>>{cls.x.done_f}};
@@ -516,7 +527,7 @@ namespace  __match_impl {
 
     template <int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS>
     struct cc<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS> {
-        static consteval func go(cls_LS cls) {
+        static constexpr func go(cls_LS cls) {
             using head_pats = cc_cls_get_head_pats<scru_type, cls_LS, type_list<>>::type;
             if constexpr (head_pats::is_empty_t) {
                 return cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS>::go(cls);
@@ -544,10 +555,9 @@ namespace  __match_impl {
 
     template <typename scru_types_LS, typename clauses_LS>
     struct compile_clauses {
-        static consteval func go(clauses_LS cls) {
+        static constexpr func go(clauses_LS cls) {
             let res = cc<0, scru_types_LS, clauses_LS>::go(cls);
-            cls.iter([](auto cl){
-                using cl_t = decltype(cl);
+            decltype(cls)::iter_t([]<typename cl_t>() {
                 static_assert(decltype(res)::reached_cls_idxs::template mem_t<cl_t::cl_idx>, "error: unreachable clause.");
             });
             return res.v;
@@ -597,7 +607,7 @@ namespace  __match_impl {
     template <int scrutinee_idx, typename scru_type, typename catch_all_T, typename branches_LS, typename scrutinee_LS>
     struct case_tree_gen_switch_tree<case_tree::split<scrutinee_idx, scru_type, catch_all_T, branches_LS>, scrutinee_LS> {
         static constexpr func go(case_tree::split<scrutinee_idx, scru_type, catch_all_T, branches_LS> ct_split, scrutinee_LS scrutinee_ls) {
-            return scru_type::template elim<scrutinee_idx, catch_all_T, branches_LS, scrutinee_LS>(ct_split, scrutinee_ls);
+            return scru_type::template __elim<scrutinee_idx, catch_all_T, branches_LS, scrutinee_LS>(ct_split, scrutinee_ls);
         }
     };
 
@@ -628,7 +638,7 @@ struct match {
     }
 
     template <typename... clause_fn_ts>
-    inline func with(clause_fn_ts... clause_fns) {
+    constexpr func with(clause_fn_ts... clause_fns) {
         let cls = make_cls<0, clause_fn_ts...>::go(clause_fns...);
         let ct = __match_impl::compile_clauses<__match_impl::type_list<scru_types...>, decltype(cls)>::go(cls);
         return __match_impl::case_tree_gen_switch_tree<decltype(ct), __match_impl::type_list<scru_types...>>::go(ct, scrutinee_ls);
@@ -708,7 +718,7 @@ constexpr std::size_t __tagged_va_count(Args&&...) { return sizeof...(Args); }
 case tag_t::__tagged_fst x: return __match_impl::case_tree_gen_switch_tree<decltype(__match_impl::case_tree_split_get_branch<__tagged_fst x>(ct_split)), scrutinee_LS>::go( \
     case_tree_split_get_branch<__tagged_fst x>(ct_split), scrutinee_ls);
     // #define __tagged_part6(x) static constexpr inline auto __tagged_make_name(x)(__tagged_fst x v) { return self_t {.d = {.__tagged_fst x = v}}; }
-#define __tagged_part6(x) template<> inline constexpr auto from<__tagged_fst x>(__tagged_fst x v) -> self_t { \
+#define __tagged_part6(x) template<> constexpr auto from<__tagged_fst x>(__tagged_fst x v) -> self_t { \
     return {.tag = tag_t::__tagged_fst x, .d = {.__tagged_fst x = v}}; \
 }
 
@@ -771,14 +781,14 @@ case tag_t::__tagged_fst x: return __match_impl::case_tree_gen_switch_tree<declt
         __tagged_FOR_EACH(__tagged_part4, __VA_ARGS__) \
         \
         template <int scrutinee_idx, typename catch_all_T, typename branches_LS, typename scrutinee_LS> \
-        constexpr static auto elim(__match_impl::case_tree::split<scrutinee_idx, self_t, catch_all_T, branches_LS> ct_split, scrutinee_LS scrutinee_ls) { \
+        static constexpr auto __elim(__match_impl::case_tree::split<scrutinee_idx, self_t, catch_all_T, branches_LS> ct_split, scrutinee_LS scrutinee_ls) { \
             switch (scrutinee_ls.template get_by_idx<self_t, scrutinee_idx>().tag) { \
                 __tagged_FOR_EACH(__tagged_part5, __VA_ARGS__) \
             } \
         } \
         \
         template <typename a> \
-        static inline constexpr auto from(a v) -> self_t; \
+        static constexpr auto from(a v) -> self_t; \
         __tagged_FOR_EACH(__tagged_part6, __VA_ARGS__) \
     }
 
