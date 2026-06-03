@@ -1,5 +1,8 @@
-#include <cstdio>
+// Algebraic data types (discriminated unions) and ML style pattern matching in C++.
+
+
 #include "mlmatch.h"
+#include <cstdio>
 
 
 struct tagged(expr) (
@@ -10,13 +13,14 @@ struct tagged(expr) (
     (div, (expr* e1, expr* e2)),
 );
 
+// Basic match example
 int eval(expr* e) {
-    return match(*e).with(
-        [](expr::val e) { return e.v; },
-        [](expr::add e) { return eval(e.e1) + eval(e.e2); },
-        [](expr::sub e) { return eval(e.e1) - eval(e.e2); },
-        [](expr::mul e) { return eval(e.e1) * eval(e.e2); },
-        [](expr::div e) { return eval(e.e1) / eval(e.e2); }
+    return match(e).with(
+        [](expr::val* e) { return e->v; },
+        [](expr::add* e) { return eval(e->e1) + eval(e->e2); },
+        [](expr::sub* e) { return eval(e->e1) - eval(e->e2); },
+        [](expr::mul* e) { return eval(e->e1) * eval(e->e2); },
+        [](expr::div* e) { return eval(e->e1) / eval(e->e2); }
     );
 }
 
@@ -101,3 +105,13 @@ int main() {
     classify2_test();
     printf("\n");
 }
+
+
+template <typename a, typename b>
+struct pair {a fst; b snd;};
+
+template <typename A>
+struct tagged(list) (
+    (nil,  ()),
+    (cons, (A x, list<A>* xs))
+);
