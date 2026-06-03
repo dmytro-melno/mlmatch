@@ -115,3 +115,17 @@ struct tagged(list) (
     (nil,  ()),
     (cons, (A x, list<A>* xs))
 );
+
+
+struct tagged(var_sized_test) (
+    (one, (int a)),
+    (two, (int a, int b, int c[]))
+);
+
+void var_sized_test_fn(var_sized_test* v) {
+    match(v).with(
+        [](var_sized_test::one _) { printf("one"); return 0; },
+        [](var_sized_test::two _) { printf("two"); return 0; }
+    );
+    return;
+}

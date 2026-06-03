@@ -415,7 +415,7 @@ namespace  __match_impl {
     template <typename R, typename C, typename... Args>
     struct lambda_clause_helper<R(C::*)(Args...) const> {
         using rty = R;
-        using args = type_list<Args...>;
+        using args = meta_list<Args...>;
     };
 
     // template<class... Ts> lambda_clause_helper(Ts...) -> lambda_clause_helper<Ts...>;
@@ -481,12 +481,12 @@ namespace  __match_impl {
     };
 
     template <typename scru_type, int cl_idx, typename done_F, typename... cls_ts, typename head_pats_LS>
-    struct cc_cls_get_head_pats<scru_type, type_list<clause<cl_idx, type_list<>, done_F>, cls_ts...>, head_pats_LS> {
+    struct cc_cls_get_head_pats<scru_type, type_list<clause<cl_idx, meta_list<>, done_F>, cls_ts...>, head_pats_LS> {
         static_assert(false, "error: too few patterns, less patterns than scrutinee values.");
     };
 
     template <typename scru_type, int cl_idx, typename pat, typename... pats, typename done_F, typename... cls_ts, typename head_pats_LS>
-    struct cc_cls_get_head_pats<scru_type, type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...>, head_pats_LS> {
+    struct cc_cls_get_head_pats<scru_type, type_list<clause<cl_idx, meta_list<pat, pats...>, done_F>, cls_ts...>, head_pats_LS> {
         // static_assert(
         //     is_same_v<pat, wildcard> || is_same_v<typename pat::__datacon_ty, scru_type>,
         //     "error: pattern must be either 'wildcard' or one of constructors of the type of value in scrutinee."
@@ -518,15 +518,15 @@ namespace  __match_impl {
     struct cc_specialize;
 
     template <typename head_pat, typename scru_type, int cl_idx, typename pat, typename... pats, typename done_F, typename... cls_ts>
-    struct cc_specialize<head_pat, scru_type, type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...>> {
-        static constexpr func go(type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...> cls) {
+    struct cc_specialize<head_pat, scru_type, type_list<clause<cl_idx, meta_list<pat, pats...>, done_F>, cls_ts...>> {
+        static constexpr func go(type_list<clause<cl_idx, meta_list<pat, pats...>, done_F>, cls_ts...> cls) {
             if constexpr (
                 is_same_v<typename deref_t<pat>::type, typename deref_t<head_pat>::type> ||
                 is_same_v<pat, wildcard> ||
                 is_same_v<typename deref_t<pat>::type, typename deref_t<scru_type>::type>
             ) {
                 return cc_specialize<head_pat, scru_type, type_list<cls_ts...>>::go(cls.xs)
-                    .cons(clause<cl_idx, type_list<pats...>, done_F>{cls.x.done_f});
+                    .cons(clause<cl_idx, meta_list<pats...>, done_F>{cls.x.done_f});
             } else {
                 return cc_specialize<head_pat, scru_type, type_list<cls_ts...>>::go(cls.xs);
             }
@@ -544,14 +544,14 @@ namespace  __match_impl {
     struct cc_default;
 
     template <typename scru_type, int cl_idx, typename pat, typename... pats, typename done_F, typename... cls_ts>
-    struct cc_default<scru_type, type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...>> {
-        static constexpr func go(type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...> cls) {
+    struct cc_default<scru_type, type_list<clause<cl_idx, meta_list<pat, pats...>, done_F>, cls_ts...>> {
+        static constexpr func go(type_list<clause<cl_idx, meta_list<pat, pats...>, done_F>, cls_ts...> cls) {
             if constexpr (
                 is_same_v<pat, wildcard> ||
                 is_same_v<typename deref_t<pat>::type, typename deref_t<scru_type>::type>
             ) {
                 return cc_default<scru_type, type_list<cls_ts...>>::go(cls.xs)
-                    .cons(clause<cl_idx, type_list<pats...>, done_F>{cls.x.done_f});
+                    .cons(clause<cl_idx, meta_list<pats...>, done_F>{cls.x.done_f});
             } else {
                 return cc_default<scru_type, type_list<cls_ts...>>::go(cls.xs);
             }
@@ -669,24 +669,24 @@ namespace  __match_impl {
     struct apply_scrutinee;
 
     template <typename F, typename... arg_acc_ts>
-    struct apply_scrutinee<F, type_list<>, type_list<>, arg_acc_ts...> {
+    struct apply_scrutinee<F, type_list<>, meta_list<>, arg_acc_ts...> {
         static constexpr func go(F f, type_list<> scrutinee_ls, arg_acc_ts... acc) {
             return f(acc...);
         }
     };
 
     template <typename F, typename scru_type, typename... scru_types, typename arg_t, typename... arg_ts, typename... arg_acc_ts>
-    struct apply_scrutinee<F, type_list<scru_type*, scru_types...>, type_list<arg_t, arg_ts...>, arg_acc_ts...> {
+    struct apply_scrutinee<F, type_list<scru_type*, scru_types...>, meta_list<arg_t, arg_ts...>, arg_acc_ts...> {
         static constexpr func go(F f, type_list<scru_type*, scru_types...> scrutinee_ls, arg_acc_ts... acc) {
-            return apply_scrutinee<F, type_list<scru_types...>, type_list<arg_ts...>, arg_acc_ts..., arg_t>::go(
+            return apply_scrutinee<F, type_list<scru_types...>, meta_list<arg_ts...>, arg_acc_ts..., arg_t>::go(
                 f, scrutinee_ls.xs, acc..., scrutinee_ls.x->template as<arg_t>());
         }
     };
 
     template <typename F, typename scru_type, typename... scru_types, typename arg_t, typename... arg_ts, typename... arg_acc_ts>
-    struct apply_scrutinee<F, type_list<scru_type, scru_types...>, type_list<arg_t, arg_ts...>, arg_acc_ts...> {
+    struct apply_scrutinee<F, type_list<scru_type, scru_types...>, meta_list<arg_t, arg_ts...>, arg_acc_ts...> {
         static constexpr func go(F f, type_list<scru_type, scru_types...> scrutinee_ls, arg_acc_ts... acc) {
-            return apply_scrutinee<F, type_list<scru_types...>, type_list<arg_ts...>, arg_acc_ts..., arg_t>::go(
+            return apply_scrutinee<F, type_list<scru_types...>, meta_list<arg_ts...>, arg_acc_ts..., arg_t>::go(
                 f, scrutinee_ls.xs, acc..., scrutinee_ls.x.template as<arg_t>());
         }
     };
