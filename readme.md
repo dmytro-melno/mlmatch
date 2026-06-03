@@ -21,7 +21,6 @@ It is inspired by pattern matching features of functional languages like OCaml a
 
 ## Requirements
 - A C++20-compliant compiler.
-- The `<type_traits>` standard header.
 
 ## Usage
 

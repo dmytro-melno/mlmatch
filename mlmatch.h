@@ -23,8 +23,6 @@
 
 #pragma once
 
-#include <type_traits>
-
 #define func auto
 #define let auto
 
@@ -45,7 +43,18 @@ namespace  __match_impl {
     // template <typename A> struct is_some<some<A>> { static constexpr bool value = true; };
     // template <>           struct is_some<none> { static constexpr bool value = false; };
 
+    template <typename A, typename B>
+    struct is_same {
+        static constexpr bool value = false;
+    };
 
+    template <typename A>
+    struct is_same<A, A> {
+        static constexpr bool value = true;
+    };
+
+    template <typename A, typename B>
+    static constexpr bool is_same_v = is_same<A, B>::value;
 
 
     template <typename A, typename B>
@@ -86,9 +95,7 @@ namespace  __match_impl {
         static constexpr bool is_empty_t = false;
 
         template <typename a>
-        static constexpr bool mem_t = meta_list<tail...>::template mem_t<a>;
-        template <>
-        constexpr bool mem_t<head> = true;
+        static constexpr bool mem_t = is_same_v<a, head> || (is_same_v<a, tail> || ...);
     };
 
     template <typename... >
@@ -217,9 +224,7 @@ namespace  __match_impl {
         }
 
         template <typename a>
-        static constexpr bool mem_t = type_list<tail...>::template mem_t<a>;
-        template <>
-        constexpr bool mem_t<head> = true;
+        static constexpr bool mem_t = is_same_v<a, head> || (is_same_v<a, tail> || ...);
 
         template <typename a>
         constexpr bool mem_v(a v) const { return v == x || xs.template mem_v<a>(v); }
@@ -316,11 +321,11 @@ namespace  __match_impl {
 
         static constexpr bool is_empty_t = false;
 
-        template <t v> static constexpr bool mem_t = value_list<t, vals...>::template mem_t<v>;
-        template <> constexpr bool mem_t<val> = true;
+        template <t v>
+        static constexpr bool mem_t = (v == val) || ((v == vals) || ...);
 
         template <t v>
-        static consteval bool mem_v() { return v == val || value_list<t, vals...>::template mem_v<v>(); }
+        static consteval bool mem_v() { return mem_t<v>; }
 
         template <template <t a> typename F>
         static consteval void iter(F<val> f) {
@@ -380,6 +385,18 @@ namespace  __match_impl {
     template <int... nums>
     using int_list = value_list<int, nums...>;
 
+    template <int n, int... nums>
+    struct make_int_list_impl {
+        using type = typename make_int_list_impl<n - 1, n - 1, nums...>::type;
+    };
+
+    template <int... nums>
+    struct make_int_list_impl<0, nums...> {
+        using type = int_list<nums...>;
+    };
+
+    template <int n>
+    using make_int_list = typename make_int_list_impl<n>::type;
 
 
     template <typename F>
@@ -449,6 +466,20 @@ namespace  __match_impl {
     template <typename scru_type, typename cls_LS, typename head_pats_LS>
     struct cc_cls_get_head_pats;
 
+    template <bool should_add, typename scru_type, typename cls_LS, typename head_pats_LS, typename pat>
+    struct cc_cls_get_head_pats_next;
+
+    template <typename scru_type, typename cls_LS, typename head_pats_LS, typename pat>
+    struct cc_cls_get_head_pats_next<true, scru_type, cls_LS, head_pats_LS, pat> {
+        using pat_t = typename deref_t<pat>::type;
+        using type = typename cc_cls_get_head_pats<scru_type, cls_LS, typename head_pats_LS::template cons_t<pat_t>>::type::template cons_t<pat_t>;
+    };
+
+    template <typename scru_type, typename cls_LS, typename head_pats_LS, typename pat>
+    struct cc_cls_get_head_pats_next<false, scru_type, cls_LS, head_pats_LS, pat> {
+        using type = typename cc_cls_get_head_pats<scru_type, cls_LS, head_pats_LS>::type;
+    };
+
     template <typename scru_type, int cl_idx, typename done_F, typename... cls_ts, typename head_pats_LS>
     struct cc_cls_get_head_pats<scru_type, type_list<clause<cl_idx, type_list<>, done_F>, cls_ts...>, head_pats_LS> {
         static_assert(false, "error: too few patterns, less patterns than scrutinee values.");
@@ -457,16 +488,25 @@ namespace  __match_impl {
     template <typename scru_type, int cl_idx, typename pat, typename... pats, typename done_F, typename... cls_ts, typename head_pats_LS>
     struct cc_cls_get_head_pats<scru_type, type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...>, head_pats_LS> {
         // static_assert(
-        //     std::is_same<pat, wildcard>::value || std::is_same<typename pat::__datacon_ty, scru_type>::value,
+        //     is_same_v<pat, wildcard> || is_same_v<typename pat::__datacon_ty, scru_type>,
         //     "error: pattern must be either 'wildcard' or one of constructors of the type of value in scrutinee."
         // );
 
-        using type =
-            typename std::conditional<
-                (!std::is_same<typename deref_t<pat>::type, typename deref_t<scru_type>::type>::value && !std::is_same<pat, wildcard>::value && !head_pats_LS::template mem_t<typename deref_t<pat>::type>),
-                typename cc_cls_get_head_pats<scru_type, type_list<cls_ts...>, typename head_pats_LS::template cons_t<typename deref_t<pat>::type>>::type::template cons_t<typename deref_t<pat>::type>,
-                typename cc_cls_get_head_pats<scru_type, type_list<cls_ts...>, head_pats_LS>::type
-            >::type;
+        using pat_t = typename deref_t<pat>::type;
+        using scru_t = typename deref_t<scru_type>::type;
+
+        static constexpr bool should_add =
+            !is_same_v<pat_t, scru_t> &&
+            !is_same_v<pat, wildcard> &&
+            !head_pats_LS::template mem_t<pat_t>;
+
+        using type = typename cc_cls_get_head_pats_next<
+            should_add,
+            scru_type,
+            type_list<cls_ts...>,
+            head_pats_LS,
+            pat
+        >::type;
     };
 
     template <typename scru_type, typename head_pats_LS>
@@ -480,7 +520,11 @@ namespace  __match_impl {
     template <typename head_pat, typename scru_type, int cl_idx, typename pat, typename... pats, typename done_F, typename... cls_ts>
     struct cc_specialize<head_pat, scru_type, type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...>> {
         static constexpr func go(type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...> cls) {
-            if constexpr (std::is_same<typename deref_t<pat>::type, typename deref_t<head_pat>::type>::value || std::is_same<pat, wildcard>::value || std::is_same<typename deref_t<pat>::type, typename deref_t<scru_type>::type>::value) {
+            if constexpr (
+                is_same_v<typename deref_t<pat>::type, typename deref_t<head_pat>::type> ||
+                is_same_v<pat, wildcard> ||
+                is_same_v<typename deref_t<pat>::type, typename deref_t<scru_type>::type>
+            ) {
                 return cc_specialize<head_pat, scru_type, type_list<cls_ts...>>::go(cls.xs)
                     .cons(clause<cl_idx, type_list<pats...>, done_F>{cls.x.done_f});
             } else {
@@ -502,7 +546,10 @@ namespace  __match_impl {
     template <typename scru_type, int cl_idx, typename pat, typename... pats, typename done_F, typename... cls_ts>
     struct cc_default<scru_type, type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...>> {
         static constexpr func go(type_list<clause<cl_idx, type_list<pat, pats...>, done_F>, cls_ts...> cls) {
-            if constexpr (std::is_same<pat, wildcard>::value || std::is_same<typename deref_t<pat>::type, typename deref_t<scru_type>::type>::value) {
+            if constexpr (
+                is_same_v<pat, wildcard> ||
+                is_same_v<typename deref_t<pat>::type, typename deref_t<scru_type>::type>
+            ) {
                 return cc_default<scru_type, type_list<cls_ts...>>::go(cls.xs)
                     .cons(clause<cl_idx, type_list<pats...>, done_F>{cls.x.done_f});
             } else {
@@ -687,6 +734,12 @@ namespace  __match_impl {
             return ct_split.catch_all;
         }
     }
+
+    template <typename tkey, int scrutinee_idx, typename scru_type, typename catch_all_T, typename branches_LS, typename scrutinee_LS>
+    static constexpr func case_tree_gen_branch(case_tree::split<scrutinee_idx, scru_type, catch_all_T, branches_LS> ct_split, scrutinee_LS scrutinee_ls) {
+        let branch = case_tree_split_get_branch<tkey>(ct_split);
+        return case_tree_gen_switch_tree<decltype(branch), scrutinee_LS>::go(branch, scrutinee_ls);
+    }
 };
 
 
@@ -698,29 +751,18 @@ struct match {
 
     template <typename... clause_fn_ts>
     constexpr func with(clause_fn_ts... clause_fns) {
-        let cls = make_cls<0, clause_fn_ts...>::go(clause_fns...);
+        let cls = make_cls_impl(__match_impl::make_int_list<sizeof...(clause_fn_ts)>{}, clause_fns...);
         let ct = __match_impl::compile_clauses<__match_impl::type_list<scru_types...>, decltype(cls)>::go(cls);
         return __match_impl::case_tree_gen_switch_tree<decltype(ct), __match_impl::type_list<scru_types...>>::go(ct, scrutinee_ls);
     }
 private:
     __match_impl::type_list<scru_types...> scrutinee_ls;
 
-    template <int cl_idx, typename... ts>
-    struct make_cls;
+    template <int... cl_idxs, typename... clause_fn_ts>
+    static constexpr auto make_cls_impl(__match_impl::int_list<cl_idxs...>, clause_fn_ts... clause_fns) {
+        return __match_impl::type_list<>::make(__match_impl::make_clause<cl_idxs>(clause_fns)...);
+    }
 
-    template <int cl_idx>
-    struct make_cls<cl_idx> {
-        static constexpr auto go() {
-            return __match_impl::type_list<>::nil();
-        }
-    };
-
-    template <int cl_idx, typename t, typename... ts>
-    struct make_cls<cl_idx, t, ts...> {
-        static constexpr auto go(t el, ts... els) {
-            return make_cls<cl_idx + 1, ts...>::go(els...).cons(__match_impl::make_clause<cl_idx>(el));
-        }
-    };
 };
 
 using _ = wildcard;
@@ -730,7 +772,7 @@ using _ = wildcard;
 
 
 template<typename ...Args>
-constexpr std::size_t __tagged_va_count(Args&&...) { return sizeof...(Args); }
+constexpr auto __tagged_va_count(Args&&...) { return sizeof...(Args); }
 
 #define __tagged_XCAT2(a, b) a##b
 #define __tagged_XCAT(a, b) __tagged_XCAT2(a, b)
@@ -783,12 +825,10 @@ constexpr std::size_t __tagged_va_count(Args&&...) { return sizeof...(Args); }
     template <> inline auto as<__tagged_fst x *>() -> __tagged_fst x * { return &d.__tagged_fst x; };
 
 #define __tagged_part5(x) \
-    case tag_t::__tagged_fst x: return __match_impl::case_tree_gen_switch_tree<decltype(__match_impl::case_tree_split_get_branch<__tagged_fst x>(ct_split)), scrutinee_LS>::go( \
-        __match_impl::case_tree_split_get_branch<__tagged_fst x>(ct_split), scrutinee_ls);
+    case tag_t::__tagged_fst x: return __match_impl::case_tree_gen_branch<__tagged_fst x>(ct_split, scrutinee_ls);
 
 #define __tagged_part5_ptr(x) \
-    case tag_t::__tagged_fst x: return __match_impl::case_tree_gen_switch_tree<decltype(__match_impl::case_tree_split_get_branch<__tagged_fst x>(ct_split)), scrutinee_LS>::go( \
-        __match_impl::case_tree_split_get_branch<__tagged_fst x>(ct_split), scrutinee_ls);
+    case tag_t::__tagged_fst x: return __match_impl::case_tree_gen_branch<__tagged_fst x>(ct_split, scrutinee_ls);
 
 #define __tagged_part6(x) \
     template<> inline constexpr auto from<__tagged_fst x>(__tagged_fst x v) -> self_t { \

@@ -21,7 +21,6 @@
 
 // ## Requirements
 // - A C++20-compliant compiler.
-// - The `<type_traits>` standard header.
 
 // ## Usage
 
