@@ -28,6 +28,18 @@
 
 struct wildcard {};
 
+template <typename... case_ts>
+struct mlmatch_unhandled_case {};
+
+template <int clause_number, typename... pattern_ts>
+struct mlmatch_unreachable_clause {};
+
+template <int clause_number, int expected_patterns, int actual_patterns, typename... pattern_ts>
+struct mlmatch_clause_arity_mismatch {};
+
+template <int clause_number, int pattern_position, typename scrutinee_type, typename pattern_type>
+struct mlmatch_invalid_pattern {};
+
 namespace  __match_impl {
     template <typename A>
     struct some {
@@ -56,6 +68,19 @@ namespace  __match_impl {
     template <typename A, typename B>
     static constexpr bool is_same_v = is_same<A, B>::value;
 
+    template <typename...>
+    static constexpr bool always_false_v = false;
+
+    template <bool cond, typename true_T, typename false_T>
+    struct type_if {
+        using type = true_T;
+    };
+
+    template <typename true_T, typename false_T>
+    struct type_if<false, true_T, false_T> {
+        using type = false_T;
+    };
+
 
     template <typename A, typename B>
     struct tkey_val {
@@ -75,6 +100,9 @@ namespace  __match_impl {
         template <typename a>
         using cons_t = meta_list<a>;
 
+        template <typename a>
+        using snoc_t = meta_list<a>;
+
         static constexpr int size = 0;
 
         static constexpr bool is_empty_t = true;
@@ -89,6 +117,9 @@ namespace  __match_impl {
 
         template <typename a>
         using cons_t = meta_list<a, head, tail...>;
+
+        template <typename a>
+        using snoc_t = meta_list<head, tail..., a>;
 
         static constexpr int size = sizeof...(tail) + 1;
 
@@ -432,6 +463,11 @@ namespace  __match_impl {
     struct case_tree {
         struct empty {};
 
+        template <typename case_LS>
+        struct missing {};
+
+        struct invalid {};
+
         template <int scrutinee_idx, typename scru_type, typename catch_all_T, typename branches_LS>
         struct split {branches_LS branches; catch_all_T catch_all;};
 
@@ -448,7 +484,7 @@ namespace  __match_impl {
         result_t v;
     };
 
-    template <int scrutinee_idx, typename scru_types_LS, typename clauses_LS>
+    template <int scrutinee_idx, typename scru_types_LS, typename clauses_LS, typename case_LS = meta_list<>>
     struct cc {
         static constexpr func go(clauses_LS cls) = delete;
     };
@@ -565,22 +601,77 @@ namespace  __match_impl {
         }
     };
 
-    template <typename head_pats_LS, int scrutinee_idx, typename scru_types_LS, typename cls_LS>
+
+    template <typename ctor_LS, typename excluded_ctors_LS>
+    struct first_ctor_not_in;
+
+    template <bool is_excluded, typename head_ctor, typename tail_ctors_LS, typename excluded_ctors_LS>
+    struct first_ctor_not_in_next;
+
+    template <typename head_ctor, typename tail_ctors_LS, typename excluded_ctors_LS>
+    struct first_ctor_not_in_next<false, head_ctor, tail_ctors_LS, excluded_ctors_LS> {
+        using type = head_ctor;
+    };
+
+    template <typename head_ctor, typename tail_ctors_LS, typename excluded_ctors_LS>
+    struct first_ctor_not_in_next<true, head_ctor, tail_ctors_LS, excluded_ctors_LS> {
+        using type = typename first_ctor_not_in<tail_ctors_LS, excluded_ctors_LS>::type;
+    };
+
+    template <typename head_ctor, typename... tail_ctors, typename excluded_ctors_LS>
+    struct first_ctor_not_in<meta_list<head_ctor, tail_ctors...>, excluded_ctors_LS> {
+        using type = typename first_ctor_not_in_next<
+            excluded_ctors_LS::template mem_t<head_ctor>,
+            head_ctor,
+            meta_list<tail_ctors...>,
+            excluded_ctors_LS
+        >::type;
+    };
+
+
+    template <typename case_LS, typename scru_types_LS>
+    struct complete_case_with_defaults;
+
+    template <typename case_LS>
+    struct complete_case_with_defaults<case_LS, type_list<>> {
+        using type = case_LS;
+    };
+
+    template <typename case_LS, typename scru_type, typename... scru_types>
+    struct complete_case_with_defaults<case_LS, type_list<scru_type, scru_types...>> {
+        using default_pat = typename deref_t<scru_type>::type::__ctors::head_type;
+        using next_case = typename case_LS::template snoc_t<default_pat>;
+        using type = typename complete_case_with_defaults<next_case, type_list<scru_types...>>::type;
+    };
+
+
+    template <typename head_pats_LS, int scrutinee_idx, typename scru_types_LS, typename cls_LS, typename case_LS>
     struct cc_split;
 
-    template<int scrutinee_idx, typename scru_types_LS, typename cls_LS>
-    struct cc_split<meta_list<>, scrutinee_idx, scru_types_LS, cls_LS> {
+    template<int scrutinee_idx, typename scru_types_LS, typename cls_LS, typename case_LS>
+    struct cc_split<meta_list<>, scrutinee_idx, scru_types_LS, cls_LS, case_LS> {
         static constexpr func go(cls_LS cls) {
             return cc_result<type_list<>, int_list<>>{type_list<>::nil()};
         }
     };
 
-    template<typename head_pat, typename... head_pats, int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS>
-    struct cc_split<meta_list<head_pat, head_pats...>, scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS> {
+    template<typename head_pat, typename... head_pats, int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS, typename case_LS>
+    struct cc_split<meta_list<head_pat, head_pats...>, scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS, case_LS> {
         static constexpr func go(cls_LS cls) {
             let s_cls = cc_specialize<head_pat, scru_type, cls_LS>::go(cls);
-            let res_ct_next = cc<scrutinee_idx + 1, type_list<scru_types...>, decltype(s_cls)>::go(s_cls);
-            let res_branches = cc_split<meta_list<head_pats...>, scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS>::go(cls);
+            let res_ct_next = cc<
+                scrutinee_idx + 1,
+                type_list<scru_types...>,
+                decltype(s_cls),
+                typename case_LS::template snoc_t<head_pat>
+            >::go(s_cls);
+            let res_branches = cc_split<
+                meta_list<head_pats...>,
+                scrutinee_idx,
+                type_list<scru_type, scru_types...>,
+                cls_LS,
+                case_LS
+            >::go(cls);
             let branches = res_branches.v.cons(tkey_val<head_pat, decltype(res_ct_next.v)>::make(res_ct_next.v));
             using reached_cls_ids = value_list_concat<
                                         typename decltype(res_ct_next)::reached_cls_idxs,
@@ -589,26 +680,41 @@ namespace  __match_impl {
         }
     };
 
-    template <int scrutinee_idx, typename scru_types_LS, typename cls_LS>
+    template <int scrutinee_idx, typename scru_types_LS, typename cls_LS, typename head_pats_LS, typename case_LS>
     struct cc_catch_all;
 
-    template <int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS>
-    struct cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS> {
+    template <int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS, typename head_pats_LS, typename case_LS>
+    struct cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS, head_pats_LS, case_LS> {
         static constexpr func go(cls_LS cls) {
+            using default_pat = typename first_ctor_not_in<typename deref_t<scru_type>::type::__ctors, head_pats_LS>::type;
             let d_cls = cc_default<scru_type, cls_LS>::go(cls);
-            return cc<scrutinee_idx + 1, type_list<scru_types...>, decltype(d_cls)>::go(d_cls);
+            return cc<
+                scrutinee_idx + 1,
+                type_list<scru_types...>,
+                decltype(d_cls),
+                typename case_LS::template snoc_t<default_pat>
+            >::go(d_cls);
         }
     };
 
-    template <int scrutinee_idx, typename scru_types_LS>
-    struct cc<scrutinee_idx, scru_types_LS, type_list<>> {
+    template <int scrutinee_idx, typename case_LS>
+    struct cc<scrutinee_idx, type_list<>, type_list<>, case_LS> {
         static constexpr func go(type_list<> cls) {
-            static_assert(false, "error: unhandled case.");
+            return cc_result<case_tree::missing<case_LS>, int_list<>>{case_tree::missing<case_LS>{}};
         }
     };
 
-    template <int scrutinee_idx, int cl_idx, typename pats_LS, typename done_F, typename... cls_ts>
-    struct cc<scrutinee_idx, type_list<>, type_list<clause<cl_idx, pats_LS, done_F>, cls_ts...>> {
+    template <int scrutinee_idx, typename scru_type, typename... scru_types, typename case_LS>
+    struct cc<scrutinee_idx, type_list<scru_type, scru_types...>, type_list<>, case_LS> {
+        static constexpr func go(type_list<> cls) {
+            using scru_types_LS = type_list<scru_type, scru_types...>;
+            using missing_case = typename complete_case_with_defaults<case_LS, scru_types_LS>::type;
+            return cc_result<case_tree::missing<missing_case>, int_list<>>{case_tree::missing<missing_case>{}};
+        }
+    };
+
+    template <int scrutinee_idx, int cl_idx, typename pats_LS, typename done_F, typename... cls_ts, typename case_LS>
+    struct cc<scrutinee_idx, type_list<>, type_list<clause<cl_idx, pats_LS, done_F>, cls_ts...>, case_LS> {
         static constexpr func go(type_list<clause<cl_idx, pats_LS, done_F>, cls_ts...> cls) {
             static_assert(pats_LS::is_empty_t, "error: excessive patterns. more pattern than scrutinee values.");
             return cc_result<case_tree::done<done_F, fn_get_arg_tys<done_F>>, int_list<cl_idx>>{
@@ -616,19 +722,19 @@ namespace  __match_impl {
         }
     };
 
-    template <int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS>
-    struct cc<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS> {
+    template <int scrutinee_idx, typename scru_type, typename... scru_types, typename cls_LS, typename case_LS>
+    struct cc<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS, case_LS> {
         static constexpr func go(cls_LS cls) {
             using head_pats = cc_cls_get_head_pats<scru_type, cls_LS, meta_list<>>::type;
             if constexpr (head_pats::is_empty_t) {
-                return cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS>::go(cls);
+                return cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS, head_pats, case_LS>::go(cls);
             } else {
-                let res_branches = cc_split<head_pats, scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS>::go(cls);
+                let res_branches = cc_split<head_pats, scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS, case_LS>::go(cls);
                 let res_catch_all = [=](){
                     if constexpr (decltype(res_branches.v)::size == deref_t<scru_type>::type::ctors_count) {
                         return cc_result<case_tree::empty, int_list<>>{case_tree::empty{}};
                     } else {
-                        return cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS>::go(cls);
+                        return cc_catch_all<scrutinee_idx, type_list<scru_type, scru_types...>, cls_LS, head_pats, case_LS>::go(cls);
                     }
                 }();
                 using reached_cls_ids = value_list_concat<
@@ -644,14 +750,218 @@ namespace  __match_impl {
         }
     };
 
+    template <int expected_count, typename clauses_LS>
+    struct first_clause_arity_mismatch {
+        static constexpr bool has_mismatch = false;
+        using type = none;
+    };
+
+    template <int expected_count, int cl_idx, typename pats_LS, typename done_F, typename... cl_ts>
+    struct first_clause_arity_mismatch<expected_count, type_list<clause<cl_idx, pats_LS, done_F>, cl_ts...>> {
+        using tail_mismatch = first_clause_arity_mismatch<expected_count, type_list<cl_ts...>>;
+
+        static constexpr bool head_mismatch = pats_LS::size != expected_count;
+        static constexpr bool has_mismatch = head_mismatch || tail_mismatch::has_mismatch;
+        using type = typename type_if<
+            head_mismatch,
+            clause<cl_idx, pats_LS, done_F>,
+            typename tail_mismatch::type
+        >::type;
+    };
+
+    template <int expected_count, typename cl_T>
+    struct report_clause_arity_mismatch;
+
+    template <int expected_count, int cl_idx, typename... pats, typename done_F>
+    struct report_clause_arity_mismatch<expected_count, clause<cl_idx, meta_list<pats...>, done_F>> {
+        static constexpr func go() -> void {
+            static_assert(
+                always_false_v<mlmatch_clause_arity_mismatch<cl_idx + 1, expected_count, sizeof...(pats), pats...>>,
+                "mlmatch error: clause has the wrong number of patterns; the 1-based clause index, expected count, actual count, and patterns are shown in the failed requirement as mlmatch_clause_arity_mismatch<...>."
+            );
+        }
+    };
+
+
+    template <int cl_idx, int pat_idx, typename scru_type, typename pat>
+    struct invalid_pattern_info {};
+
+    template <int cl_idx, int pat_idx, typename scru_types_LS, typename pats_LS>
+    struct first_invalid_pattern_in_clause {
+        static constexpr bool has_invalid = false;
+        using type = none;
+    };
+
+    template <int cl_idx, int pat_idx, typename scru_type, typename... scru_types, typename pat, typename... pats>
+    struct first_invalid_pattern_in_clause<cl_idx, pat_idx, type_list<scru_type, scru_types...>, meta_list<pat, pats...>> {
+        using pat_t = typename deref_t<pat>::type;
+        using scru_t = typename deref_t<scru_type>::type;
+        using tail_invalid = first_invalid_pattern_in_clause<cl_idx, pat_idx + 1, type_list<scru_types...>, meta_list<pats...>>;
+
+        static constexpr bool head_invalid =
+            !is_same_v<pat, wildcard> &&
+            !is_same_v<pat_t, scru_t> &&
+            !scru_t::__ctors::template mem_t<pat_t>;
+        static constexpr bool has_invalid = head_invalid || tail_invalid::has_invalid;
+        using type = typename type_if<
+            head_invalid,
+            invalid_pattern_info<cl_idx, pat_idx, scru_type, pat>,
+            typename tail_invalid::type
+        >::type;
+    };
+
+    template <typename scru_types_LS, typename clauses_LS>
+    struct first_invalid_pattern {
+        static constexpr bool has_invalid = false;
+        using type = none;
+    };
+
+    template <typename scru_types_LS, int cl_idx, typename pats_LS, typename done_F, typename... cl_ts>
+    struct first_invalid_pattern<scru_types_LS, type_list<clause<cl_idx, pats_LS, done_F>, cl_ts...>> {
+        using head_invalid = first_invalid_pattern_in_clause<cl_idx, 0, scru_types_LS, pats_LS>;
+        using tail_invalid = first_invalid_pattern<scru_types_LS, type_list<cl_ts...>>;
+
+        static constexpr bool has_invalid = head_invalid::has_invalid || tail_invalid::has_invalid;
+        using type = typename type_if<
+            head_invalid::has_invalid,
+            typename head_invalid::type,
+            typename tail_invalid::type
+        >::type;
+    };
+
+    template <typename invalid_pattern_info_T>
+    struct report_invalid_pattern;
+
+    template <int cl_idx, int pat_idx, typename scru_type, typename pat>
+    struct report_invalid_pattern<invalid_pattern_info<cl_idx, pat_idx, scru_type, pat>> {
+        static constexpr func go() -> void {
+            static_assert(
+                always_false_v<mlmatch_invalid_pattern<cl_idx + 1, pat_idx + 1, scru_type, pat>>,
+                "mlmatch error: invalid pattern type; each pattern must be _, the scrutinee type, or one of the scrutinee constructors. The 1-based clause index, 1-based pattern position, scrutinee type, and pattern type are shown in the failed requirement as mlmatch_invalid_pattern<...>."
+            );
+        }
+    };
+
+
+    template <typename case_tree_T>
+    struct case_tree_first_missing {
+        static constexpr bool has_missing = false;
+        using type = meta_list<>;
+    };
+
+    template <typename case_LS>
+    struct case_tree_first_missing<case_tree::missing<case_LS>> {
+        static constexpr bool has_missing = true;
+        using type = case_LS;
+    };
+
+    template <typename branches_LS>
+    struct case_tree_branches_first_missing {
+        static constexpr bool has_missing = false;
+        using type = meta_list<>;
+    };
+
+    template <typename branch_key, typename branch_T, typename... branch_ts>
+    struct case_tree_branches_first_missing<type_list<tkey_val<branch_key, branch_T>, branch_ts...>> {
+        using head_missing = case_tree_first_missing<branch_T>;
+        using tail_missing = case_tree_branches_first_missing<type_list<branch_ts...>>;
+
+        static constexpr bool has_missing = head_missing::has_missing || tail_missing::has_missing;
+        using type = typename type_if<
+            head_missing::has_missing,
+            typename head_missing::type,
+            typename tail_missing::type
+        >::type;
+    };
+
+    template <int scrutinee_idx, typename scru_type, typename catch_all_T, typename branches_LS>
+    struct case_tree_first_missing<case_tree::split<scrutinee_idx, scru_type, catch_all_T, branches_LS>> {
+        using branch_missing = case_tree_branches_first_missing<branches_LS>;
+        using catch_all_missing = case_tree_first_missing<catch_all_T>;
+
+        static constexpr bool has_missing = branch_missing::has_missing || catch_all_missing::has_missing;
+        using type = typename type_if<
+            branch_missing::has_missing,
+            typename branch_missing::type,
+            typename catch_all_missing::type
+        >::type;
+    };
+
+
+    template <typename case_LS>
+    struct report_unhandled_case;
+
+    template <typename... case_ts>
+    struct report_unhandled_case<meta_list<case_ts...>> {
+        static constexpr func go() -> void {
+            static_assert(
+                always_false_v<mlmatch_unhandled_case<case_ts...>>,
+                "mlmatch error: pattern match is not exhaustive; an unhandled case is shown in the failed requirement as mlmatch_unhandled_case<...>."
+            );
+        }
+    };
+
+    template <typename reached_cls_idxs_LS, typename clauses_LS>
+    struct first_unreachable_clause {
+        static constexpr bool has_unreachable = false;
+        using type = none;
+    };
+
+    template <typename reached_cls_idxs_LS, typename cl_T, typename... cl_ts>
+    struct first_unreachable_clause<reached_cls_idxs_LS, type_list<cl_T, cl_ts...>> {
+        using tail_unreachable = first_unreachable_clause<reached_cls_idxs_LS, type_list<cl_ts...>>;
+
+        static constexpr bool head_unreachable = !reached_cls_idxs_LS::template mem_t<cl_T::cl_idx>;
+        static constexpr bool has_unreachable = head_unreachable || tail_unreachable::has_unreachable;
+        using type = typename type_if<
+            head_unreachable,
+            cl_T,
+            typename tail_unreachable::type
+        >::type;
+    };
+
+    template <typename cl_T>
+    struct report_unreachable_clause;
+
+    template <int cl_idx, typename... pats, typename done_F>
+    struct report_unreachable_clause<clause<cl_idx, meta_list<pats...>, done_F>> {
+        static constexpr func go() -> void {
+            static_assert(
+                always_false_v<mlmatch_unreachable_clause<cl_idx + 1, pats...>>,
+                "mlmatch error: unreachable clause; the 1-based clause index and its patterns are shown in the failed requirement as mlmatch_unreachable_clause<...>."
+            );
+        }
+    };
+
+
     template <typename scru_types_LS, typename clauses_LS>
     struct compile_clauses {
         static constexpr func go(clauses_LS cls) {
-            let res = cc<0, scru_types_LS, clauses_LS>::go(cls);
-            decltype(cls)::iter_t([]<typename cl_t>() {
-                static_assert(decltype(res)::reached_cls_idxs::template mem_t<cl_t::cl_idx>, "error: unreachable clause.");
-            });
-            return res.v;
+            using arity_mismatch = first_clause_arity_mismatch<scru_types_LS::size, clauses_LS>;
+            if constexpr (arity_mismatch::has_mismatch) {
+                report_clause_arity_mismatch<scru_types_LS::size, typename arity_mismatch::type>::go();
+                return case_tree::invalid{};
+            } else {
+                using invalid_pattern = first_invalid_pattern<scru_types_LS, clauses_LS>;
+                if constexpr (invalid_pattern::has_invalid) {
+                    report_invalid_pattern<typename invalid_pattern::type>::go();
+                    return case_tree::invalid{};
+                } else {
+                    let res = cc<0, scru_types_LS, clauses_LS>::go(cls);
+
+                    using missing = case_tree_first_missing<decltype(res.v)>;
+                    if constexpr (missing::has_missing) {
+                        report_unhandled_case<typename missing::type>::go();
+                    }
+
+                    using unreachable = first_unreachable_clause<typename decltype(res)::reached_cls_idxs, decltype(cls)>;
+                    if constexpr (unreachable::has_unreachable) {
+                        report_unreachable_clause<typename unreachable::type>::go();
+                    }
+
+                    return res.v;
+                }
+            }
         }
         // private:
         // static consteval func get_error_str(int cl_idx) {
@@ -740,6 +1050,13 @@ namespace  __match_impl {
         let branch = case_tree_split_get_branch<tkey>(ct_split);
         return case_tree_gen_switch_tree<decltype(branch), scrutinee_LS>::go(branch, scrutinee_ls);
     }
+
+    struct invalid_match_expression {
+        template <typename result_t>
+        constexpr operator result_t() const {
+            __builtin_unreachable();
+        }
+    };
 };
 
 
@@ -753,7 +1070,14 @@ struct match {
     constexpr func with(clause_fn_ts... clause_fns) {
         let cls = make_cls_impl(__match_impl::make_int_list<sizeof...(clause_fn_ts)>{}, clause_fns...);
         let ct = __match_impl::compile_clauses<__match_impl::type_list<scru_types...>, decltype(cls)>::go(cls);
-        return __match_impl::case_tree_gen_switch_tree<decltype(ct), __match_impl::type_list<scru_types...>>::go(ct, scrutinee_ls);
+        if constexpr (
+            __match_impl::is_same_v<decltype(ct), __match_impl::case_tree::invalid> ||
+            __match_impl::case_tree_first_missing<decltype(ct)>::has_missing
+        ) {
+            return __match_impl::invalid_match_expression{};
+        } else {
+            return __match_impl::case_tree_gen_switch_tree<decltype(ct), __match_impl::type_list<scru_types...>>::go(ct, scrutinee_ls);
+        }
     }
 private:
     __match_impl::type_list<scru_types...> scrutinee_ls;
@@ -802,6 +1126,7 @@ constexpr auto __tagged_va_count(Args&&...) { return sizeof...(Args); }
 #define __tagged_pick_3(f, s, t) t
 #define __tagged_fst_comma_sep(x) __tagged_fst x,
 #define __tagged_fst_comma_sep2(x) __tagged_fst x{}
+#define __tagged_fst_type(x) __tagged_fst x
 
 #define __tagged_part1_1(x) x;
 #define __tagged_part1(x) \
@@ -878,6 +1203,7 @@ constexpr auto __tagged_va_count(Args&&...) { return sizeof...(Args); }
         \
         __tagged_FOR_EACH(__tagged_part1, __VA_ARGS__) \
         \
+        using __ctors = __match_impl::meta_list<__tagged_FOR_EACH_comma(__tagged_fst_type, __VA_ARGS__)>; \
         static constexpr int ctors_count = __tagged_va_count(__tagged_FOR_EACH_comma(__tagged_fst_comma_sep2, __VA_ARGS__)); \
         \
         template <typename> static constexpr tag_t tag_of{}; \
