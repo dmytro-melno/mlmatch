@@ -11,13 +11,13 @@ It is inspired by pattern matching features of functional languages like OCaml a
 - Unreachable clauses detection.
 - Zero runtime overhead. It generates a simple `switch` statement tree from pattern matching clauses at compile time using template meta programming. The generated `switch` tree is guaranteed to inspect each scrutinee value at most once.
 - Compact memory representation of tagged unions.
+- GADTs (Indexed ADTs).
 - Pattern clauses compilation to case tree is based on [Maranget's algorithm](https://doi.org/10.1145/1411304.1411311), guaranteeing the same matching semantics as in OCaml or Haskell.
 
 ## Limitations
-- Pattern matching only supported for types defined via the `tagged` macro. Matching on types such as `bool`, `int`, or `std::optional` is not supported.
+- Pattern matching only supported for types defined via the `tagged` or `tagged_gadt` macros. Matching on types such as `bool`, `int`, or `std::optional` is not supported.
 - No nested pattern matching.
 - No guard clauses (`when`).
-- No GADTs/indexed data types.
 
 ## Requirements
 - A C++20-compliant compiler.
@@ -62,6 +62,44 @@ void test_eval() {
 // res = 4205
 ```
 
+### GADTs (Indexed ADTs)
+```C++
+template <typename ty>
+struct tagged_gadt(expr) (
+    (int_lit,  (int value),                                          (expr<int>)),
+    (bool_lit, (bool value),                                         (expr<bool>)),
+    (add,      (expr<int>* lhs, expr<int>* rhs),                     (expr<int>)),
+    (equal,    (expr<int>* lhs, expr<int>* rhs),                     (expr<bool>)),
+    (if_,      (expr<bool>* cond, expr<ty>* then_, expr<ty>* else_), (expr<ty>))
+);
+
+template <typename ty>
+ty eval(expr<ty>* e) {
+    return match(e).with(
+        [](expr<int>::int_lit* n)   { return n->value; },
+        [](expr<bool>::bool_lit* b) { return b->value; },
+        [](expr<int>::add* a)       { return eval(a->lhs) + eval(a->rhs); },
+        [](expr<bool>::equal* eq)   { return eval(eq->lhs) == eval(eq->rhs); },
+        [](expr<ty>::if_* if_)      { return eval(if_->cond) ? eval(if_->then_) : eval(if_->else_); }
+    );
+}
+
+void test_eval_typed_expr() {
+    auto one = expr<int>::int_lit::make(1);
+    auto two = expr<int>::int_lit::make(2);
+    auto three = expr<int>::add::make(&one, &two);
+
+    auto expected = expr<int>::int_lit::make(3);
+    auto condition = expr<bool>::equal::make(&three, &expected);
+
+    auto zero = expr<int>::int_lit::make(0);
+    auto result = expr<int>::if_::make(&condition, &three, &zero);
+
+    printf("%d\n", eval(&result));
+}
+// Output:
+// 3
+```
 
 ### Multiple scrutinee and "wildcard" patterns
 ```C++

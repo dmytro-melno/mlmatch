@@ -499,6 +499,98 @@ namespace  __match_impl {
         using type = a;
     };
 
+    template <typename scru_t, typename pat_t>
+    struct is_same_gadt_family {
+        static constexpr bool value = false;
+    };
+
+    template <typename scru_t, typename pat_t>
+        requires requires {
+            typename scru_t::__gadt_family;
+            typename pat_t::__gadt_family;
+        }
+    struct is_same_gadt_family<scru_t, pat_t> {
+        static constexpr bool value = is_same_v<typename scru_t::__gadt_family, typename pat_t::__gadt_family>;
+    };
+
+    template <typename scru_t, typename pat_t>
+    struct is_possible_gadt_ctor {
+        static constexpr bool value = false;
+    };
+
+    template <typename scru_t, typename pat_t>
+        requires requires {
+            typename scru_t::__gadt_family;
+            typename pat_t::__gadt_family;
+            typename pat_t::__gadt_enclosing_t;
+            typename pat_t::__gadt_result_t;
+        }
+    struct is_possible_gadt_ctor<scru_t, pat_t> {
+        static constexpr bool value =
+            is_same_gadt_family<scru_t, pat_t>::value &&
+            is_same_v<scru_t, typename pat_t::__gadt_enclosing_t> &&
+            is_same_v<scru_t, typename pat_t::__gadt_result_t>;
+    };
+
+    template <typename scru_t, typename pat_t>
+    struct is_valid_ctor_pattern {
+        static constexpr bool value =
+            scru_t::__ctors::template mem_t<pat_t> ||
+            is_same_gadt_family<scru_t, pat_t>::value;
+    };
+
+    template <typename scru_t, typename pat_t>
+    struct is_possible_ctor_pattern {
+        static constexpr bool value =
+            scru_t::__ctors::template mem_t<pat_t> ||
+            is_possible_gadt_ctor<scru_t, pat_t>::value;
+    };
+
+    template <typename scru_type, typename pat>
+    struct is_impossible_pattern_for_scrutinee {
+        using pat_t = typename deref_t<pat>::type;
+        using scru_t = typename deref_t<scru_type>::type;
+
+        static constexpr bool is_wildcard_or_scrutinee =
+            is_same_v<pat, wildcard> ||
+            is_same_v<pat_t, scru_t>;
+
+        static constexpr bool value =
+            !is_wildcard_or_scrutinee &&
+            is_valid_ctor_pattern<scru_t, pat_t>::value &&
+            !is_possible_ctor_pattern<scru_t, pat_t>::value;
+    };
+
+    template <typename scru_types_LS, typename pats_LS>
+    struct clause_is_impossible {
+        static constexpr bool value = false;
+    };
+
+    template <typename scru_type, typename... scru_types, typename pat, typename... pats>
+    struct clause_is_impossible<type_list<scru_type, scru_types...>, meta_list<pat, pats...>> {
+        static constexpr bool value =
+            is_impossible_pattern_for_scrutinee<scru_type, pat>::value ||
+            clause_is_impossible<type_list<scru_types...>, meta_list<pats...>>::value;
+    };
+
+    template <typename scru_t, typename ctors_LS>
+    struct gadt_possible_ctors;
+
+    template <typename scru_t>
+    struct gadt_possible_ctors<scru_t, meta_list<>> {
+        using type = meta_list<>;
+    };
+
+    template <typename scru_t, typename ctor_t, typename... ctor_ts>
+    struct gadt_possible_ctors<scru_t, meta_list<ctor_t, ctor_ts...>> {
+        using tail_type = typename gadt_possible_ctors<scru_t, meta_list<ctor_ts...>>::type;
+        using type = typename type_if<
+            is_possible_gadt_ctor<scru_t, ctor_t>::value,
+            typename tail_type::template cons_t<ctor_t>,
+            tail_type
+        >::type;
+    };
+
     template <typename scru_type, typename cls_LS, typename head_pats_LS>
     struct cc_cls_get_head_pats;
 
@@ -534,6 +626,7 @@ namespace  __match_impl {
         static constexpr bool should_add =
             !is_same_v<pat_t, scru_t> &&
             !is_same_v<pat, wildcard> &&
+            is_possible_ctor_pattern<scru_t, pat_t>::value &&
             !head_pats_LS::template mem_t<pat_t>;
 
         using type = typename cc_cls_get_head_pats_next<
@@ -801,7 +894,7 @@ namespace  __match_impl {
         static constexpr bool head_invalid =
             !is_same_v<pat, wildcard> &&
             !is_same_v<pat_t, scru_t> &&
-            !scru_t::__ctors::template mem_t<pat_t>;
+            !is_valid_ctor_pattern<scru_t, pat_t>::value;
         static constexpr bool has_invalid = head_invalid || tail_invalid::has_invalid;
         using type = typename type_if<
             head_invalid,
@@ -901,17 +994,18 @@ namespace  __match_impl {
         }
     };
 
-    template <typename reached_cls_idxs_LS, typename clauses_LS>
+    template <typename reached_cls_idxs_LS, typename scru_types_LS, typename clauses_LS>
     struct first_unreachable_clause {
         static constexpr bool has_unreachable = false;
         using type = none;
     };
 
-    template <typename reached_cls_idxs_LS, typename cl_T, typename... cl_ts>
-    struct first_unreachable_clause<reached_cls_idxs_LS, type_list<cl_T, cl_ts...>> {
-        using tail_unreachable = first_unreachable_clause<reached_cls_idxs_LS, type_list<cl_ts...>>;
+    template <typename reached_cls_idxs_LS, typename scru_types_LS, typename cl_T, typename... cl_ts>
+    struct first_unreachable_clause<reached_cls_idxs_LS, scru_types_LS, type_list<cl_T, cl_ts...>> {
+        using tail_unreachable = first_unreachable_clause<reached_cls_idxs_LS, scru_types_LS, type_list<cl_ts...>>;
 
-        static constexpr bool head_unreachable = !reached_cls_idxs_LS::template mem_t<cl_T::cl_idx>;
+        static constexpr bool head_impossible = clause_is_impossible<scru_types_LS, typename cl_T::args_LS>::value;
+        static constexpr bool head_unreachable = !head_impossible && !reached_cls_idxs_LS::template mem_t<cl_T::cl_idx>;
         static constexpr bool has_unreachable = head_unreachable || tail_unreachable::has_unreachable;
         using type = typename type_if<
             head_unreachable,
@@ -954,7 +1048,7 @@ namespace  __match_impl {
                         report_unhandled_case<typename missing::type>::go();
                     }
 
-                    using unreachable = first_unreachable_clause<typename decltype(res)::reached_cls_idxs, decltype(cls)>;
+                    using unreachable = first_unreachable_clause<typename decltype(res)::reached_cls_idxs, scru_types_LS, decltype(cls)>;
                     if constexpr (unreachable::has_unreachable) {
                         report_unreachable_clause<typename unreachable::type>::go();
                     }
@@ -1124,9 +1218,13 @@ constexpr auto __tagged_va_count(Args&&...) { return sizeof...(Args); }
 #define __tagged_pick_1(f, s, t) f
 #define __tagged_pick_2(f, s, t) s
 #define __tagged_pick_3(f, s, t) t
+#define __tagged_unparen(...) __VA_ARGS__
+#define __tagged_gadt_result_type(f, s, t) __tagged_unparen t
 #define __tagged_fst_comma_sep(x) __tagged_fst x,
 #define __tagged_fst_comma_sep2(x) __tagged_fst x{}
 #define __tagged_fst_type(x) __tagged_fst x
+#define __tagged_pick_1_comma_sep(x) __tagged_pick_1 x,
+#define __tagged_pick_1_type(x) __tagged_pick_1 x
 
 #define __tagged_part1_1(x) x;
 #define __tagged_part1(x) \
@@ -1191,6 +1289,112 @@ constexpr auto __tagged_va_count(Args&&...) { return sizeof...(Args); }
   __VA_OPT__(__tagged_FOR_EACH_comma_AGAIN PARENS (macro, __VA_ARGS__))
 #define __tagged_FOR_EACH_comma_AGAIN() __tagged_FOR_EACH_comma_HELPER
 
+
+#define __tagged_gadt_part1(x) \
+    struct __tagged_pick_1 x { \
+        using __gadt_family = self_t::__gadt_family; \
+        using __gadt_enclosing_t = self_t; \
+        using __gadt_result_t = __tagged_gadt_result_type x; \
+        __tagged_make_fields __tagged_pick_2 x \
+        \
+        template <typename... ts> \
+        static auto make(ts... args) -> __gadt_result_t requires __match_impl::is_same_v<self_t, __gadt_result_t> { \
+            return __gadt_result_t{.tag = __gadt_result_t::tag_t::__tagged_pick_1 x, .d = {.__tagged_pick_1 x = typename __gadt_result_t::__tagged_pick_1 x{args...}}}; \
+        } \
+        \
+        operator __gadt_result_t() const requires __match_impl::is_same_v<self_t, __gadt_result_t> { \
+            return self_t::from(*this); \
+        } \
+    };
+
+#define __tagged_gadt_part2(x) [[no_unique_address]] __tagged_pick_1 x __tagged_pick_1 x;
+
+#define __tagged_gadt_part3(x) template <> constexpr tag_t tag_of<__tagged_pick_1 x> = tag_t::__tagged_pick_1 x;
+
+#define __tagged_gadt_part4(x) \
+    template <> inline auto as<__tagged_pick_1 x>() -> __tagged_pick_1 x { return d.__tagged_pick_1 x; }; \
+    template <> inline auto as<__tagged_pick_1 x *>() -> __tagged_pick_1 x * { return &d.__tagged_pick_1 x; };
+
+#define __tagged_gadt_part5(x) \
+    case tag_t::__tagged_pick_1 x: \
+        if constexpr (__match_impl::is_same_v<self_t, typename __tagged_pick_1 x::__gadt_result_t>) { \
+            return __match_impl::case_tree_gen_branch<__tagged_pick_1 x>(ct_split, scrutinee_ls); \
+        } else { \
+            __builtin_unreachable(); \
+        }
+
+#define __tagged_gadt_part5_ptr(x) \
+    case tag_t::__tagged_pick_1 x: \
+        if constexpr (__match_impl::is_same_v<self_t, typename __tagged_pick_1 x::__gadt_result_t>) { \
+            return __match_impl::case_tree_gen_branch<__tagged_pick_1 x>(ct_split, scrutinee_ls); \
+        } else { \
+            __builtin_unreachable(); \
+        }
+
+#define __tagged_gadt_part6(x) \
+    template<> inline constexpr auto from<__tagged_pick_1 x>(__tagged_pick_1 x v) -> self_t { \
+        static_assert(__match_impl::is_same_v<self_t, typename __tagged_pick_1 x::__gadt_result_t>, "mlmatch error: this GADT constructor does not construct this indexed type."); \
+        return {.tag = tag_t::__tagged_pick_1 x, .d = {.__tagged_pick_1 x = v}}; \
+    }
+
+#define tagged_gadt(tycon_name) \
+    tycon_name { \
+        using self_t = tycon_name; \
+        using __gadt_family = struct __tagged_XCAT(tycon_name, __gadt_family); \
+        tagged_gadt_end
+
+#define tagged_gadt_end(...) \
+    enum class tag_t : unsigned char { \
+        __tagged_FOR_EACH(__tagged_pick_1_comma_sep, __VA_ARGS__) \
+    }; \
+    \
+    __tagged_FOR_EACH(__tagged_gadt_part1, __VA_ARGS__) \
+    \
+    using __all_ctors = __match_impl::meta_list<__tagged_FOR_EACH_comma(__tagged_pick_1_type, __VA_ARGS__)>; \
+    using __ctors = typename __match_impl::gadt_possible_ctors<self_t, __all_ctors>::type; \
+    static constexpr int ctors_count = __ctors::size; \
+    \
+    template <typename> static constexpr tag_t tag_of{}; \
+    __tagged_FOR_EACH(__tagged_gadt_part3, __VA_ARGS__) \
+    \
+    tag_t tag; \
+    [[no_unique_address]] union { \
+        __tagged_FOR_EACH(__tagged_gadt_part2, __VA_ARGS__) \
+    } d; \
+    \
+    template <typename ctor_t> inline auto as() -> ctor_t; \
+    template <> inline auto as<wildcard>() -> wildcard { return wildcard{}; }; \
+    template <> inline auto as<self_t>() -> self_t { return *this; }; \
+    template <> inline auto as<self_t*>() -> self_t* { return this; }; \
+    __tagged_FOR_EACH(__tagged_gadt_part4, __VA_ARGS__) \
+    \
+    template <int scrutinee_idx, typename catch_all_T, typename branches_LS, typename scrutinee_LS> \
+    static constexpr auto __elim(__match_impl::case_tree::split<scrutinee_idx, self_t, catch_all_T, branches_LS> ct_split, scrutinee_LS scrutinee_ls) { \
+        switch (scrutinee_ls.template get_by_idx<self_t, scrutinee_idx>().tag) { \
+            __tagged_FOR_EACH(__tagged_gadt_part5, __VA_ARGS__) \
+        } \
+    } \
+    \
+    template <int scrutinee_idx, typename catch_all_T, typename branches_LS, typename scrutinee_LS> \
+    static constexpr auto __elim_ptr(__match_impl::case_tree::split<scrutinee_idx, self_t*, catch_all_T, branches_LS> ct_split, scrutinee_LS scrutinee_ls) { \
+        switch (scrutinee_ls.template get_by_idx<self_t*, scrutinee_idx>()->tag) { \
+            __tagged_FOR_EACH(__tagged_gadt_part5_ptr, __VA_ARGS__) \
+        } \
+    } \
+    \
+    template <typename __a> \
+    static constexpr auto from(__a v) -> self_t; \
+    __tagged_FOR_EACH(__tagged_gadt_part6, __VA_ARGS__) \
+    \
+    template <typename __t> \
+    static auto emit_at(self_t* mem_ptr, __t val) -> void { \
+        static_assert(__match_impl::is_same_v<self_t, typename __t::__gadt_result_t>, "mlmatch error: this GADT constructor does not construct this indexed type."); \
+        mem_ptr->tag = self_t::tag_of<__t>; \
+        *mem_ptr->as<__t*>() = val; \
+        return; \
+    } \
+}
+
 #define tagged(tycon_name) \
     tycon_name { \
         using self_t = tycon_name; \
@@ -1234,14 +1438,14 @@ constexpr auto __tagged_va_count(Args&&...) { return sizeof...(Args); }
             } \
         } \
         \
-        template <typename a> \
-        static constexpr auto from(a v) -> self_t; \
+        template <typename __a> \
+        static constexpr auto from(__a v) -> self_t; \
         __tagged_FOR_EACH(__tagged_part6, __VA_ARGS__) \
         \
-        template <typename t> \
-        static auto emit_at(self_t* mem_ptr, t val) -> void { \
-            mem_ptr->tag = self_t::tag_of<t>; \
-            *mem_ptr->as<t*>() = val; \
+        template <typename __t> \
+        static auto emit_at(self_t* mem_ptr, __t val) -> void { \
+            mem_ptr->tag = self_t::tag_of<__t>; \
+            *mem_ptr->as<__t*>() = val; \
             return; \
         } \
     }
