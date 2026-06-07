@@ -1156,9 +1156,7 @@ namespace  __match_impl {
 
 template <typename... scru_types>
 struct match {
-    match(scru_types... scru_vals) {
-        scrutinee_ls = __match_impl::type_list<>::make(scru_vals...);
-    }
+    match(scru_types... scru_vals) : scrutinee_ls(__match_impl::type_list<>::make(scru_vals...)) {}
 
     template <typename... clause_fn_ts>
     constexpr func with(clause_fn_ts... clause_fns) {
