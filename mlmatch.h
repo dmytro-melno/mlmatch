@@ -178,12 +178,12 @@ namespace  __match_impl {
         }
 
         template <typename F>
-        constexpr func iter(F f) -> void {
+        constexpr func iter(F _) -> void {
             return;
         }
 
         template <typename F>
-        static constexpr func iter_t(F f) -> void {
+        static constexpr func iter_t(F _) -> void {
             return;
         }
 
@@ -191,7 +191,7 @@ namespace  __match_impl {
         static constexpr bool mem_t = false;
 
         template <typename a>
-        constexpr bool mem_v(a v) const { return false; }
+        constexpr bool mem_v(a _) const { return false; }
     };
 
     template <typename head, typename... tail>
@@ -233,7 +233,7 @@ namespace  __match_impl {
             auto new_xs = xs.template insert_if_not_exists<T>(v);
             return new_xs.cons(x);
         }
-        template <> constexpr func insert_if_not_exists<head>(head v) -> auto {
+        template <> constexpr func insert_if_not_exists<head>(head _) -> auto {
             return *this;
         }
 
@@ -274,7 +274,7 @@ namespace  __match_impl {
 
     template <typename... xs_ts>
     struct type_list_concat_rev<type_list<xs_ts...>, type_list<>> {
-        static constexpr func go(type_list<xs_ts...> xs, type_list<> ys) {
+        static constexpr func go(type_list<xs_ts...> xs, type_list<> _) {
             return xs;
         }
     };
@@ -664,7 +664,7 @@ namespace  __match_impl {
 
     template <typename head_pat, typename scru_type>
     struct cc_specialize<head_pat, scru_type, type_list<>> {
-        static constexpr func go(type_list<> cls) {
+        static constexpr func go(type_list<> _) {
             return type_list<>::nil();
         }
     };
@@ -689,7 +689,7 @@ namespace  __match_impl {
 
     template <typename scru_type>
     struct cc_default<scru_type, type_list<>> {
-        static constexpr func go(type_list<> cls) {
+        static constexpr func go(type_list<> _) {
             return type_list<>::nil();
         }
     };
@@ -743,7 +743,7 @@ namespace  __match_impl {
 
     template<int scrutinee_idx, typename scru_types_LS, typename cls_LS, typename case_LS>
     struct cc_split<meta_list<>, scrutinee_idx, scru_types_LS, cls_LS, case_LS> {
-        static constexpr func go(cls_LS cls) {
+        static constexpr func go(cls_LS _) {
             return cc_result<type_list<>, int_list<>>{type_list<>::nil()};
         }
     };
@@ -792,14 +792,14 @@ namespace  __match_impl {
 
     template <int scrutinee_idx, typename case_LS>
     struct cc<scrutinee_idx, type_list<>, type_list<>, case_LS> {
-        static constexpr func go(type_list<> cls) {
+        static constexpr func go(type_list<> _) {
             return cc_result<case_tree::missing<case_LS>, int_list<>>{case_tree::missing<case_LS>{}};
         }
     };
 
     template <int scrutinee_idx, typename scru_type, typename... scru_types, typename case_LS>
     struct cc<scrutinee_idx, type_list<scru_type, scru_types...>, type_list<>, case_LS> {
-        static constexpr func go(type_list<> cls) {
+        static constexpr func go(type_list<> _) {
             using scru_types_LS = type_list<scru_type, scru_types...>;
             using missing_case = typename complete_case_with_defaults<case_LS, scru_types_LS>::type;
             return cc_result<case_tree::missing<missing_case>, int_list<>>{case_tree::missing<missing_case>{}};
@@ -1074,7 +1074,7 @@ namespace  __match_impl {
 
     template <typename F, typename... arg_acc_ts>
     struct apply_scrutinee<F, type_list<>, meta_list<>, arg_acc_ts...> {
-        static constexpr func go(F f, type_list<> scrutinee_ls, arg_acc_ts... acc) {
+        static constexpr func go(F f, type_list<> _, arg_acc_ts... acc) {
             return f(acc...);
         }
     };
@@ -1102,7 +1102,7 @@ namespace  __match_impl {
 
     template <typename scrutinee_LS>
     struct case_tree_gen_switch_tree<case_tree::empty, scrutinee_LS> {
-        static constexpr func go(case_tree::empty ct, scrutinee_LS scrutinee_ls) {
+        static constexpr func go(case_tree::empty _, scrutinee_LS) {
             static_assert(false, "error: unhandled case.");
         }
     };
